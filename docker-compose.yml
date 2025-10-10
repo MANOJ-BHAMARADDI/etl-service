@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Our Node.js API Service
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules # Exclude node_modules from being overwritten
+    env_file:
+      - ./.env
+    depends_on:
+      - mongo
+    container_name: kasparro_api
+
+  # MongoDB Database Service
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    container_name: kasparro_db
+
+volumes:
+  mongo-data:
