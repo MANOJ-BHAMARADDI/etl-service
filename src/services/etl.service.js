@@ -61,23 +61,26 @@ const fetchFromCsv = () => {
  * Normalizes data from both sources into our unified schema.
  */
 const transformData = (apiData, csvData) => {
-  // (No changes to transformedApiData)
-  const transformedApiData = apiData.map(/* ... */);
+  // Transform API data
+  const transformedApiData = apiData.map((item) => ({
+    symbol: item.symbol,
+    price_usd: parseFloat(item.priceUsd),
+    volume: parseFloat(item.volumeUsd24Hr),
+    source: "api",
+    timestamp: new Date(item.timestamp || Date.now()),
+  }));
 
   // Make the CSV transformation more robust
   const transformedCsvData = csvData.map((item) => {
-    // Check for the original column name first, then the drifted name
     const price = item.price_usd || item.usd_price;
-
     if (!item.price_usd && item.usd_price) {
       console.warn(
         `[SCHEMA DRIFT] Detected column 'usd_price' instead of 'price_usd' in CSV.`
       );
     }
-
     return {
       symbol: item.ticker,
-      price_usd: parseFloat(price), // Use the resilient price variable
+      price_usd: parseFloat(price),
       volume: parseFloat(item.tx_volume),
       source: "csv",
       timestamp: new Date(item.time),
