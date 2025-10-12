@@ -1,4 +1,4 @@
-import runEtlProcess from "../../services/etl.service.js";
+import { runEtlProcess } from "../../services/etl.service.js";
 
 const triggerEtl = async (req, res) => {
   console.log("Received request to trigger ETL process.");
@@ -12,4 +12,3 @@ const triggerEtl = async (req, res) => {
 };
 
 export { triggerEtl };
-

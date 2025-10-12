@@ -4,6 +4,10 @@ import { join } from "path";
 import csv from "csv-parser";
 import MarketData from "../api/models/marketData.model.js";
 import EtlRun from "../api/models/etlRun.model.js";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * --- EXTRACT ---
@@ -12,9 +16,10 @@ import EtlRun from "../api/models/etlRun.model.js";
 const fetchFromApi = async () => {
   try {
     // We'll use the free CoinCap API for cryptocurrency data
-    const response = await get(
+    const response = await axios.get(
       "https://api.coincap.io/v2/assets?limit=10"
     );
+
     console.log("Successfully fetched data from API.");
     return response.data.data; // The assets are in the 'data' property
   } catch (error) {
@@ -144,4 +149,4 @@ const runEtlProcess = async () => {
   }
 };
 
-export default { runEtlProcess };
+export { runEtlProcess };
