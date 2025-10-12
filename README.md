@@ -17,7 +17,7 @@ Follow these steps to build, configure, and run the entire application on your l
 Open your terminal and clone the project:
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/MANOJ-BHAMARADDI/etl-service
 cd etl-service
 ```
 
