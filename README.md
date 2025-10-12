@@ -105,48 +105,55 @@ Fetches market data with support for filtering, sorting, and pagination.
 
 The system consists of two primary services orchestrated by Docker Compose:
 
-- **API Service (`api`)**: A Node.js container running an Express.js server. It exposes the REST API for clients and contains the `node-cron` scheduler that triggers the ETL process.
-- **Database Service (`mongo`)**: A standard MongoDB container that provides persistent storage for the market data and ETL run logs.
+  * **API Service (`api`)**: A Node.js container running an Express.js server. It exposes the REST API for clients and contains the `node-cron` scheduler that triggers the ETL process.
+  * **Database Service (`mongo`)**: A standard MongoDB container that provides persistent storage for the market data and ETL run logs.
 
 ```mermaid
 graph TD
-    subgraph "External"
-        User([fa:fa-user User/Postman])
-        PublicAPI[fa:fa-server Public API<br>(api.coincap.io)]
-        CSVFile[fa:fa-file-csv Local CSV File]
+    subgraph Client
+        User[End User/Postman]
     end
 
-    subgraph "Your Docker Environment"
-        subgraph "API Service (api)"
-            APIServer[Express.js API]
-            Scheduler[Cron Job (Hourly)]
-            ETL[ETL Service]
-        end
+    subgraph Docker Containers
+        User --> API_Service(Node.js API Service)
+        API_Service -- HTTP/S --> Coincap_API(Coincap API)
+        API_Service -- Read CSV --> Local_CSV(Local CSV Data)
 
-        subgraph "Database Service (mongo)"
-            MongoDB[fa:fa-database MongoDB]
-        end
-
-        %% Data Flow (ETL Process)
-        Scheduler -- Triggers --> ETL
-        ETL -- "1. Fetches data via HTTP/S" --> PublicAPI
-        ETL -- "2. Reads local file" --> CSVFile
-        ETL -- "3. Transforms & Loads data" --> MongoDB
-
-        %% User Interaction Flow
-        User -- "Sends API Requests to" --> APIServer
-        APIServer -- "Reads/Writes" --> MongoDB
+        API_Service -- Reads/Writes data --> MongoDB_Service(MongoDB Database)
+        MongoDB_Service -- Persists Data --> Data_Volume(Docker Volume /data/db)
     end
 
-    %% Styling
-    style User fill:#d6b656,stroke:#333
-    style PublicAPI fill:#e6a349,stroke:#333
-    style CSVFile fill:#e6a349,stroke:#333
-    style APIServer fill:#7fb069,stroke:#333
-    style Scheduler fill:#b6d7a8,stroke:#333
-    style ETL fill:#b6d7a8,stroke:#333
-    style MongoDB fill:#6993b0,stroke:#333
-```
+    subgraph External Systems
+        Coincap_API
+        Local_CSV
+    end
+
+    subgraph Key Processes
+        API_Service -- REST Endpoints --> User
+        API_Service -- Scheduled Hourly --> ETL_Process(ETL Process)
+        ETL_Process -- Fetches & Transforms --> Coincap_API
+        ETL_Process -- Fetches & Transforms --> Local_CSV
+        ETL_Process -- Loads & Upserts --> MongoDB_Service
+    end
+
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style API_Service fill:#bbf,stroke:#333,stroke-width:2px
+    style MongoDB_Service fill:#cfc,stroke:#333,stroke-width:2px
+    style Coincap_API fill:#fcf,stroke:#333,stroke-width:2px
+    style Local_CSV fill:#fcf,stroke:#333,stroke-width:2px
+    style ETL_Process fill:#ddd,stroke:#333,stroke-width:2px
+    style Data_Volume fill:#ccc,stroke:#333,stroke-width:2px
+
+    linkStyle 0 stroke:#000,stroke-width:1px;
+    linkStyle 1 stroke:#000,stroke-width:1px;
+    linkStyle 2 stroke:#000,stroke-width:1px;
+    linkStyle 3 stroke:#000,stroke-width:1px;
+    linkStyle 4 stroke:#000,stroke-width:1px;
+    linkStyle 5 stroke:#000,stroke-width:1px;
+    linkStyle 6 stroke:#000,stroke-width:1px;
+    linkStyle 7 stroke:#000,stroke-width:1px;
+    linkStyle 8 stroke:#000,stroke-width:1px;
+    linkStyle 9 stroke:#000,stroke-width:1px;
 
 ## 🛡️ How It Recovers From Failure
 
