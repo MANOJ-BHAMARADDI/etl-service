@@ -60,16 +60,6 @@ _(**Note**: Replace `mySuperSecretToken123` with the actual token you set in you
 
 Your API is now running and accessible at `http://localhost:3000`. The ETL process is also scheduled to run automatically every hour.
 
-## 🛡️ How It Recovers From Failure
-
-The system is designed with multiple layers of resilience to handle common failures gracefully.
-
-**Failure Recovery (Idempotency):** The data loading process is idempotent. A unique compound index (`symbol`, `timestamp`) is enforced on the database collection. When loading data, the service uses an upsert operation. If a record already exists, it is updated; otherwise, it is inserted. This guarantees that re-running a failed job will not create duplicate data.
-
-**Rate Limiting:** The ETL service automatically retries API calls with exponential backoff if it detects a rate-limit error (HTTP 429) or a temporary server error (HTTP 5xx). This prevents a temporary external issue from causing a complete pipeline failure.
-
-**Schema Drift:** The pipeline gracefully handles changes in the source CSV file's column names. The transformation logic checks for known variations (e.g., `price_usd` or `usd_price`) and logs a warning without crashing, ensuring the run can complete even with minor schema changes.
-
 ## ⚙️ API Usage
 
 ### Health Check
@@ -110,3 +100,60 @@ Fetches market data with support for filtering, sorting, and pagination.
 - `sortBy` (string): Sort the results (e.g., `?sortBy=price_usd:desc`).
 - `page` (number): The page number for pagination (e.g., `?page=2`).
 - `limit` (number): The number of results per page (e.g., `?limit=50`).
+
+## 🏗️ Architecture Diagram
+
+The system consists of two primary services orchestrated by Docker Compose:
+
+- **API Service (`api`)**: A Node.js container running an Express.js server. It exposes the REST API for clients and contains the `node-cron` scheduler that triggers the ETL process.
+- **Database Service (`mongo`)**: A standard MongoDB container that provides persistent storage for the market data and ETL run logs.
+
+```mermaid
+graph TD
+    subgraph "External"
+        User([fa:fa-user User/Postman])
+        PublicAPI[fa:fa-server Public API<br>(api.coincap.io)]
+        CSVFile[fa:fa-file-csv Local CSV File]
+    end
+
+    subgraph "Your Docker Environment"
+        subgraph "API Service (api)"
+            APIServer[Express.js API]
+            Scheduler[Cron Job (Hourly)]
+            ETL[ETL Service]
+        end
+
+        subgraph "Database Service (mongo)"
+            MongoDB[fa:fa-database MongoDB]
+        end
+
+        %% Data Flow (ETL Process)
+        Scheduler -- Triggers --> ETL
+        ETL -- "1. Fetches data via HTTP/S" --> PublicAPI
+        ETL -- "2. Reads local file" --> CSVFile
+        ETL -- "3. Transforms & Loads data" --> MongoDB
+
+        %% User Interaction Flow
+        User -- "Sends API Requests to" --> APIServer
+        APIServer -- "Reads/Writes" --> MongoDB
+    end
+
+    %% Styling
+    style User fill:#d6b656,stroke:#333
+    style PublicAPI fill:#e6a349,stroke:#333
+    style CSVFile fill:#e6a349,stroke:#333
+    style APIServer fill:#7fb069,stroke:#333
+    style Scheduler fill:#b6d7a8,stroke:#333
+    style ETL fill:#b6d7a8,stroke:#333
+    style MongoDB fill:#6993b0,stroke:#333
+```
+
+## 🛡️ How It Recovers From Failure
+
+The system is designed with multiple layers of resilience to handle common failures gracefully.
+
+**Failure Recovery (Idempotency):** The data loading process is idempotent. A unique compound index (`symbol`, `timestamp`) is enforced on the database collection. When loading data, the service uses an upsert operation. If a record already exists, it is updated; otherwise, it is inserted. This guarantees that re-running a failed job will not create duplicate data.
+
+**Rate Limiting:** The ETL service automatically retries API calls with exponential backoff if it detects a rate-limit error (HTTP 429) or a temporary server error (HTTP 5xx). This prevents a temporary external issue from causing a complete pipeline failure.
+
+**Schema Drift:** The pipeline gracefully handles changes in the source CSV file's column names. The transformation logic checks for known variations (e.g., `price_usd` or `usd_price`) and logs a warning without crashing, ensuring the run can complete even with minor schema changes.
