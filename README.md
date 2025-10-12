@@ -69,3 +69,44 @@ The system is designed with multiple layers of resilience to handle common failu
 **Rate Limiting:** The ETL service automatically retries API calls with exponential backoff if it detects a rate-limit error (HTTP 429) or a temporary server error (HTTP 5xx). This prevents a temporary external issue from causing a complete pipeline failure.
 
 **Schema Drift:** The pipeline gracefully handles changes in the source CSV file's column names. The transformation logic checks for known variations (e.g., `price_usd` or `usd_price`) and logs a warning without crashing, ensuring the run can complete even with minor schema changes.
+
+## ⚙️ API Usage
+
+### Health Check
+
+Reports the status of the API and its database connection.
+
+**Request:** `GET /health`
+
+---
+
+### Trigger ETL
+
+Manually triggers a new ETL run. This endpoint is protected and requires a Bearer Token.
+
+**Request:** `POST /api/refresh`
+
+**Headers:** `Authorization: Bearer <your_secret_token>`
+
+---
+
+### Get ETL Statistics
+
+Returns metadata about the ETL process, including total record count and the status of the last run.
+
+**Request:** `GET /api/stats`
+
+---
+
+### Fetch Market Data
+
+Fetches market data with support for filtering, sorting, and pagination.
+
+**Request:** `GET /api/data`
+
+**Query Parameters:**
+
+- `symbol` (string): Filter by a specific stock/crypto symbol (e.g., `?symbol=BTC`).
+- `sortBy` (string): Sort the results (e.g., `?sortBy=price_usd:desc`).
+- `page` (number): The page number for pagination (e.g., `?page=2`).
+- `limit` (number): The number of results per page (e.g., `?limit=50`).
