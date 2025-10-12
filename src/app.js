@@ -4,6 +4,7 @@ import connection from "mongoose";
 import connectDB from "./config/database.js";
 import etlRoutes from "./api/routes/etl.routes.js";
 import dataRoutes from "./api/routes/data.routes.js";
+import "./jobs/etl.scheduler.js";
 
 // Connect to MongoDB
 connectDB();

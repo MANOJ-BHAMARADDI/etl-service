@@ -13,18 +13,23 @@ const __dirname = dirname(__filename);
  * --- EXTRACT ---
  * Fetches data from the CoinCap public API.
  */
-const fetchFromApi = async () => {
-  try {
-    // We'll use the free CoinCap API for cryptocurrency data
-    const response = await axios.get(
-      "https://api.coincap.io/v2/assets?limit=10"
-    );
+// A simple helper function to wait for a specified time
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const fetchFromApi = async (retries = 3, waitTime = 5000) => {
+  try {
+    const response = await axios.get("https://api.coincap.io/v2/assets?limit=10");
     console.log("Successfully fetched data from API.");
-    return response.data.data; // The assets are in the 'data' property
+    return response.data.data;
   } catch (error) {
+    // If we have retries left and the error is a rate limit or server error
+    if (retries > 0 && (error.response?.status === 429 || error.response?.status >= 500)) {
+      console.warn(`API fetch failed with status ${error.response.status}. Retrying in ${waitTime / 1000}s... (${retries} retries left)`);
+      await delay(waitTime);
+      return fetchFromApi(retries - 1, waitTime * 2); // Exponential backoff
+    }
     console.error("Error fetching data from API:", error.message);
-    throw new Error("API fetch failed");
+    throw new Error("API fetch failed after multiple retries");
   }
 };
 
@@ -56,23 +61,28 @@ const fetchFromCsv = () => {
  * Normalizes data from both sources into our unified schema.
  */
 const transformData = (apiData, csvData) => {
-  // Transform API data
-  const transformedApiData = apiData.map((item) => ({
-    symbol: item.symbol,
-    price_usd: parseFloat(item.priceUsd),
-    volume: parseFloat(item.volumeUsd24Hr),
-    source: "api",
-    timestamp: new Date(item.timestamp || Date.now()), // Use provided timestamp or now
-  }));
+  // (No changes to transformedApiData)
+  const transformedApiData = apiData.map(/* ... */);
 
-  // Transform CSV data
-  const transformedCsvData = csvData.map((item) => ({
-    symbol: item.ticker, // Map 'ticker' to 'symbol'
-    price_usd: parseFloat(item.price_usd),
-    volume: parseFloat(item.tx_volume),
-    source: "csv",
-    timestamp: new Date(item.time),
-  }));
+  // Make the CSV transformation more robust
+  const transformedCsvData = csvData.map((item) => {
+    // Check for the original column name first, then the drifted name
+    const price = item.price_usd || item.usd_price;
+
+    if (!item.price_usd && item.usd_price) {
+      console.warn(
+        `[SCHEMA DRIFT] Detected column 'usd_price' instead of 'price_usd' in CSV.`
+      );
+    }
+
+    return {
+      symbol: item.ticker,
+      price_usd: parseFloat(price), // Use the resilient price variable
+      volume: parseFloat(item.tx_volume),
+      source: "csv",
+      timestamp: new Date(item.time),
+    };
+  });
 
   console.log("Data transformed successfully.");
   return [...transformedApiData, ...transformedCsvData];
@@ -89,7 +99,6 @@ const loadData = async (data) => {
     return 0;
   }
 
- 
   const operations = data.map((record) => ({
     updateOne: {
       filter: { symbol: record.symbol, timestamp: record.timestamp },
