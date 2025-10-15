@@ -11,20 +11,30 @@ const __dirname = dirname(__filename);
 
 /**
  * --- EXTRACT ---
- * Fetches data from the CoinCap public API.
+ * Fetches data from the CoinGecko public API.
  */
 // A simple helper function to wait for a specified time
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const fetchFromApi = async (retries = 3, waitTime = 5000) => {
   try {
-    const response = await axios.get("https://api.coincap.io/v2/assets?limit=10");
+    // --- USING COINGECKO API ---
+    const response = await axios.get(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1"
+    );
     console.log("Successfully fetched data from API.");
-    return response.data.data;
+    return response.data;
   } catch (error) {
     // If we have retries left and the error is a rate limit or server error
-    if (retries > 0 && (error.response?.status === 429 || error.response?.status >= 500)) {
-      console.warn(`API fetch failed with status ${error.response.status}. Retrying in ${waitTime / 1000}s... (${retries} retries left)`);
+    if (
+      retries > 0 &&
+      (error.response?.status === 429 || error.response?.status >= 500)
+    ) {
+      console.warn(
+        `API fetch failed with status ${error.response.status}. Retrying in ${
+          waitTime / 1000
+        }s... (${retries} retries left)`
+      );
       await delay(waitTime);
       return fetchFromApi(retries - 1, waitTime * 2); // Exponential backoff
     }
@@ -61,13 +71,13 @@ const fetchFromCsv = () => {
  * Normalizes data from both sources into our unified schema.
  */
 const transformData = (apiData, csvData) => {
-  // Transform API data
+  // --- TRANSFORMING COINGECKO DATA ---
   const transformedApiData = apiData.map((item) => ({
-    symbol: item.symbol,
-    price_usd: parseFloat(item.priceUsd),
-    volume: parseFloat(item.volumeUsd24Hr),
+    symbol: item.symbol.toUpperCase(),
+    price_usd: parseFloat(item.current_price),
+    volume: parseFloat(item.total_volume),
     source: "api",
-    timestamp: new Date(item.timestamp || Date.now()),
+    timestamp: new Date(item.last_updated || Date.now()),
   }));
 
   // Make the CSV transformation more robust
