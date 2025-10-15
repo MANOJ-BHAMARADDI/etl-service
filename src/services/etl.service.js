@@ -3,51 +3,90 @@ import { createReadStream } from "fs";
 import { join } from "path";
 import csv from "csv-parser";
 import MarketData from "../api/models/marketData.model.js";
+import RawMarketData from "../api/models/rawMarketData.model.js";
 import EtlRun from "../api/models/etlRun.model.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/**
- * --- EXTRACT ---
- * Fetches data from the CoinGecko public API.
- */
-// A simple helper function to wait for a specified time
+// --- Rate Limiter and Caching ---
+const apiRequestTracker = {
+  coingecko: { requests: 0, startTime: Date.now() },
+  blockchain: { requests: 0, startTime: Date.now() },
+};
+
+const CACHE = {
+  coingecko: null,
+  blockchain: null,
+};
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const fetchFromApi = async (retries = 3, waitTime = 5000) => {
+async function rateLimiter(source, maxRequestsPerMinute) {
+  const now = Date.now();
+  const tracker = apiRequestTracker[source];
+
+  if (now - tracker.startTime > 60000) {
+    tracker.requests = 0;
+    tracker.startTime = now;
+  }
+
+  if (tracker.requests >= maxRequestsPerMinute) {
+    const waitTime = tracker.startTime + 60000 - now;
+    console.warn(
+      `[RATE LIMIT] ${source} limit reached. Waiting for ${waitTime / 1000}s`
+    );
+    await delay(waitTime);
+    // After waiting, reset the tracker for the new minute
+    apiRequestTracker[source] = { requests: 0, startTime: Date.now() };
+  }
+  tracker.requests++;
+}
+
+/**
+ * --- EXTRACT ---
+ * Fetches data from the CoinGecko public API (Source A).
+ */
+const fetchFromApiSourceA = async (retries = 3, waitTime = 5000) => {
+  await rateLimiter("coingecko", 10);
   try {
-    // --- USING COINGECKO API ---
     const response = await axios.get(
       "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1"
     );
-    console.log("Successfully fetched data from API.");
+    console.log("Successfully fetched data from CoinGecko API.");
+    CACHE.coingecko = response.data;
     return response.data;
   } catch (error) {
-    // If we have retries left and the error is a rate limit or server error
     if (
       retries > 0 &&
       (error.response?.status === 429 || error.response?.status >= 500)
     ) {
       console.warn(
-        `API fetch failed with status ${error.response.status}. Retrying in ${
-          waitTime / 1000
-        }s... (${retries} retries left)`
+        `CoinGecko API fetch failed with status ${
+          error.response.status
+        }. Retrying in ${waitTime / 1000}s... (${retries} retries left)`
       );
       await delay(waitTime);
-      return fetchFromApi(retries - 1, waitTime * 2); // Exponential backoff
+      return fetchFromApiSourceA(retries - 1, waitTime * 2);
     }
-    console.error("Error fetching data from API:", error.message);
-    throw new Error("API fetch failed after multiple retries");
+    console.error("Error fetching data from CoinGecko API:", error.message);
+    if (CACHE.coingecko) {
+      console.warn("Falling back to cached data for CoinGecko.");
+      return CACHE.coingecko;
+    }
+    throw new Error(
+      "CoinGecko API fetch failed after multiple retries and no cache available."
+    );
   }
 };
 
 /**
  * --- EXTRACT ---
- * Fetches data from the local CSV file.
+ * Fetches data from a local CSV file (Source B).
  */
-const fetchFromCsv = () => {
+const fetchFromCsvSourceB = () => {
   return new Promise((resolve, reject) => {
     const results = [];
     const filePath = join(__dirname, "../../market_data_source.csv");
@@ -67,20 +106,60 @@ const fetchFromCsv = () => {
 };
 
 /**
- * --- TRANSFORM ---
- * Normalizes data from both sources into our unified schema.
+ * --- EXTRACT ---
+ * Fetches data from the Blockchain.com API (Source C).
  */
-const transformData = (apiData, csvData) => {
-  // --- TRANSFORMING COINGECKO DATA ---
-  const transformedApiData = apiData.map((item) => ({
-    symbol: item.symbol.toUpperCase(),
+const fetchFromApiSourceC = async (retries = 3, waitTime = 5000) => {
+  await rateLimiter("blockchain", 3);
+  try {
+    const response = await axios.get(
+      "https://api.blockchain.com/v3/exchange/tickers"
+    );
+    console.log("Successfully fetched data from Blockchain.com API.");
+    CACHE.blockchain = response.data;
+    return response.data;
+  } catch (error) {
+    if (
+      retries > 0 &&
+      (error.response?.status === 429 || error.response?.status >= 500)
+    ) {
+      console.warn(
+        `Blockchain.com API fetch failed with status ${
+          error.response.status
+        }. Retrying in ${waitTime / 1000}s... (${retries} retries left)`
+      );
+      await delay(waitTime);
+      return fetchFromApiSourceC(retries - 1, waitTime * 2);
+    }
+    console.error(
+      "Error fetching data from Blockchain.com API:",
+      error.message
+    );
+    if (CACHE.blockchain) {
+      console.warn("Falling back to cached data for Blockchain.com.");
+      return CACHE.blockchain;
+    }
+    throw new Error(
+      "Blockchain.com API fetch failed after multiple retries and no cache available."
+    );
+  }
+};
+
+/**
+ * --- TRANSFORM ---
+ * Normalizes data from all sources into our unified schema.
+ */
+const transformData = (apiDataA, csvData, apiDataC) => {
+  // --- TRANSFORMING COINGECKO DATA (Source A) ---
+  const transformedApiDataA = apiDataA.map((item) => ({
+    symbol: item.symbol?.toUpperCase(),
     price_usd: parseFloat(item.current_price),
     volume: parseFloat(item.total_volume),
-    source: "api",
+    source: "api_coingecko",
     timestamp: new Date(item.last_updated || Date.now()),
   }));
 
-  // Make the CSV transformation more robust
+  // --- TRANSFORMING CSV DATA (Source B) ---
   const transformedCsvData = csvData.map((item) => {
     const price = item.price_usd || item.usd_price;
     if (!item.price_usd && item.usd_price) {
@@ -97,33 +176,72 @@ const transformData = (apiData, csvData) => {
     };
   });
 
+  // --- TRANSFORMING BLOCKCHAIN.COM DATA (Source C) ---
+  const transformedApiDataC = apiDataC.map((item) => ({
+    symbol: item.symbol.replace("-USD", ""),
+    price_usd: parseFloat(item.last_trade_price),
+    volume: parseFloat(item.volume_24h),
+    source: "api_blockchain",
+    timestamp: new Date(), // Blockchain.com API does not provide a timestamp
+  }));
+
+  const allData = [
+    ...transformedApiDataA,
+    ...transformedCsvData,
+    ...transformedApiDataC,
+  ];
+
+  // --- VALIDATION AND TYPE RECONCILIATION ---
+  const validatedData = allData.filter((item) => {
+    if (!item.symbol || isNaN(item.price_usd) || !item.timestamp) {
+      console.warn(
+        `[VALIDATION FAILED] Skipping invalid record: ${JSON.stringify(item)}`
+      );
+      return false;
+    }
+    return true;
+  });
+
   console.log("Data transformed successfully.");
-  return [...transformedApiData, ...transformedCsvData];
+  return validatedData;
 };
 
 /**
  * --- LOAD ---
  * Loads the transformed data into the MongoDB database.
- * This function is idempotent.
  */
-const loadData = async (data) => {
-  if (!data || data.length === 0) {
+const loadData = async (data, rawData) => {
+  if ((!data || data.length === 0) && (!rawData || rawData.length === 0)) {
     console.log("No data to load.");
-    return 0;
+    return { normalized: 0, raw: 0 };
   }
 
-  const operations = data.map((record) => ({
-    updateOne: {
-      filter: { symbol: record.symbol, timestamp: record.timestamp },
-      update: { $set: record },
-      upsert: true, // If no document matches the filter, a new one is created
-    },
-  }));
+  // Load normalized data
+  let rowsProcessed = 0;
+  if (data && data.length > 0) {
+    const operations = data.map((record) => ({
+      updateOne: {
+        filter: { symbol: record.symbol, timestamp: record.timestamp },
+        update: { $set: record },
+        upsert: true,
+      },
+    }));
+    const result = await MarketData.bulkWrite(operations);
+    rowsProcessed = result.upsertedCount + result.modifiedCount;
+    console.log(
+      `Normalized data loaded into DB. Rows processed: ${rowsProcessed}`
+    );
+  }
 
-  const result = await MarketData.bulkWrite(operations);
-  const rowsProcessed = result.upsertedCount + result.modifiedCount;
-  console.log(`Data loaded into DB. Rows processed: ${rowsProcessed}`);
-  return rowsProcessed;
+  // Load raw data
+  let rawRowsProcessed = 0;
+  if (rawData && rawData.length > 0) {
+    await RawMarketData.insertMany(rawData.map((d) => ({ data: d })));
+    rawRowsProcessed = rawData.length;
+    console.log(`Raw data loaded into DB. Rows processed: ${rawRowsProcessed}`);
+  }
+
+  return { normalized: rowsProcessed, raw: rawRowsProcessed };
 };
 
 /**
@@ -131,43 +249,51 @@ const loadData = async (data) => {
  * Main function to run the entire ETL process.
  */
 const runEtlProcess = async () => {
-  // 1. Log the start of the run
   const etlRun = new EtlRun();
   await etlRun.save();
   console.log(`Starting ETL run with ID: ${etlRun.run_id}`);
+  const summary = {
+    run_id: etlRun.run_id,
+    startTime: new Date().toISOString(),
+    status: "started",
+    records_processed: 0,
+    errors: [],
+  };
 
   try {
-    // 2. EXTRACT data from all sources concurrently
-    const [apiData, csvData] = await Promise.all([
-      fetchFromApi(),
-      fetchFromCsv(),
+    const [apiDataA, csvData, apiDataC] = await Promise.all([
+      fetchFromApiSourceA(),
+      fetchFromCsvSourceB(),
+      fetchFromApiSourceC(),
     ]);
 
-    // 3. TRANSFORM data into a unified model
-    const transformedData = transformData(apiData, csvData);
+    const rawData = [...apiDataA, ...csvData, ...apiDataC];
+    const transformedData = transformData(apiDataA, csvData, apiDataC);
+    const { normalized, raw } = await loadData(transformedData, rawData);
 
-    // 4. LOAD data into the database
-    const rowsProcessed = await loadData(transformedData);
-
-    // 5. Update the run log with completion status
     etlRun.status = "completed";
     etlRun.end_time = new Date();
-    etlRun.rows_processed = rowsProcessed;
+    etlRun.rows_processed = normalized;
     await etlRun.save();
+
+    summary.status = "completed";
+    summary.records_processed = normalized;
+
     console.log(`ETL run ${etlRun.run_id} completed successfully.`);
-    return {
-      success: true,
-      run_id: etlRun.run_id,
-      rows_processed: rowsProcessed,
-    };
   } catch (error) {
-    // 6. If any step fails, update the run log with an error status
     console.error(`ETL run ${etlRun.run_id} failed.`, error);
     etlRun.status = "failed";
     etlRun.end_time = new Date();
     etlRun.errors.push({ message: error.message, details: error.stack });
     await etlRun.save();
-    return { success: false, run_id: etlRun.run_id, error: error.message };
+
+    summary.status = "failed";
+    summary.errors.push(error.message);
+  } finally {
+    summary.endTime = new Date().toISOString();
+    console.log("--- ETL RUN SUMMARY ---");
+    console.log(JSON.stringify(summary, null, 2));
+    console.log("-----------------------");
   }
 };
 
