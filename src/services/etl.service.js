@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import rateController from "./rate.controller.js";
 import client from "prom-client";
+import { findBestMatch } from "string-similarity";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,10 +23,24 @@ const CACHE = {
 
 // --- Rate Limiter and Caching ---
 // Prometheus Metrics
-const etlRowsProcessed = new client.Counter({ name: 'etl_rows_processed_total', help: 'Total number of rows processed' });
-const etlErrors = new client.Counter({ name: 'etl_errors_total', help: 'Total number of ETL errors', labelNames: ['type'] });
-const etlLatency = new client.Histogram({ name: 'etl_latency_seconds', help: 'ETL run latency in seconds', buckets: [1, 5, 10, 30, 60] });
-const throttleEvents = new client.Counter({ name: 'throttle_events_total', help: 'Total number of throttle events' });
+const etlRowsProcessed = new client.Counter({
+  name: "etl_rows_processed_total",
+  help: "Total number of rows processed",
+});
+const etlErrors = new client.Counter({
+  name: "etl_errors_total",
+  help: "Total number of ETL errors",
+  labelNames: ["type"],
+});
+const etlLatency = new client.Histogram({
+  name: "etl_latency_seconds",
+  help: "ETL run latency in seconds",
+  buckets: [1, 5, 10, 30, 60],
+});
+const throttleEvents = new client.Counter({
+  name: "throttle_events_total",
+  help: "Total number of throttle events",
+});
 
 const quotas = {
   coingecko: 10,
@@ -35,7 +50,12 @@ const quotas = {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function rateLimiter(source, maxRequestsPerMinute) {
-  const bucket = rateController(source, maxRequestsPerMinute, maxRequestsPerMinute, 60000);
+  const bucket = rateController(
+    source,
+    maxRequestsPerMinute,
+    maxRequestsPerMinute,
+    60000
+  );
   while (!(await bucket.take())) {
     console.warn(`[RATE LIMIT] ${source} limit reached. Waiting...`);
     throttleEvents.inc();
@@ -195,8 +215,9 @@ const transformData = async (apiDataA, csvData, apiDataC) => {
 
   // --- TRANSFORMING COINGECKO DATA (Source A) ---
   const transformedApiDataA = apiDataA.map((item) => ({
-    symbol: item.symbol ? item.symbol.toUpperCase() : (item.id || null),
-    price_usd: item.current_price != null ? parseFloat(item.current_price) : null,
+    symbol: item.symbol ? item.symbol.toUpperCase() : item.id || null,
+    price_usd:
+      item.current_price != null ? parseFloat(item.current_price) : null,
     volume: item.total_volume != null ? parseFloat(item.total_volume) : null,
     source: "coingecko",
     timestamp: item.last_updated ? new Date(item.last_updated) : new Date(),
@@ -204,9 +225,10 @@ const transformData = async (apiDataA, csvData, apiDataC) => {
       id: item.id || null,
       name: item.name || null,
       market_cap: item.market_cap != null ? parseFloat(item.market_cap) : null,
-      market_cap_rank: item.market_cap_rank != null ? item.market_cap_rank : null,
-      raw: item
-    }
+      market_cap_rank:
+        item.market_cap_rank != null ? item.market_cap_rank : null,
+      raw: item,
+    },
   }));
 
   // --- TRANSFORMING CSV DATA (Source B) ---
@@ -223,7 +245,7 @@ const transformData = async (apiDataA, csvData, apiDataC) => {
       timestamp: new Date(mappedItem.time),
     };
   });
-  
+
   const transformedApiDataC = apiDataC.map((item) => {
     const raw = item;
 
@@ -378,18 +400,23 @@ const runEtlProcess = async () => {
   const endTimer = etlLatency.startTimer();
 
   try {
-    const lastRun = await EtlRun.findOne({ status: "failed" }).sort({
+    // FIX: Look for any run that is not 'completed' to handle crashes
+    const lastUnfinishedRun = await EtlRun.findOne({
+      status: { $ne: "completed" },
+      run_id: { $ne: etlRun.run_id }, // Ensure we don't resume the current run
+    }).sort({
       start_time: -1,
     });
+
     let offset = 0;
-    if (lastRun) {
+    if (lastUnfinishedRun) {
       const lastCheckpoint = await EtlCheckpoint.findOne({
-        run_id: lastRun.run_id,
+        run_id: lastUnfinishedRun.run_id,
         status: "completed",
       }).sort({ batch_no: -1 });
       if (lastCheckpoint) {
         console.log(
-          `Resuming from last successful checkpoint: batch ${lastCheckpoint.batch_no}`
+          `Resuming from last successful checkpoint of run ${lastUnfinishedRun.run_id}: batch ${lastCheckpoint.batch_no}`
         );
         offset = lastCheckpoint.offset;
       }

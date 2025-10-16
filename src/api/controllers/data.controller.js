@@ -1,6 +1,6 @@
 import MarketData from "../models/marketData.model.js";
 import EtlRun from "../models/etlRun.model.js";
-import mongoose from "mongoose";
+import client from "prom-client";
 
 /**
  * Controller to fetch market data with filtering, sorting, and pagination.
@@ -64,8 +64,21 @@ const getStats = async (req, res) => {
     const recordCount = await MarketData.countDocuments();
     const lastRun = await EtlRun.findOne().sort({ start_time: -1 });
 
+    // FIX: Modified the aggregation to handle cases where no completed runs exist
     const avgLatencyResult = await EtlRun.aggregate([
-      // ... (logic is the same)
+      {
+        $match: {
+          status: "completed",
+          start_time: { $ne: null },
+          end_time: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgLatency: { $avg: { $subtract: ["$end_time", "$start_time"] } },
+        },
+      },
     ]);
 
     const averageLatency =
@@ -73,20 +86,13 @@ const getStats = async (req, res) => {
 
     const metrics = await client.register.getMetricsAsJSON();
 
-    // FIX: Added null checks to prevent crashes if metrics don't exist yet
     const throttleMetric = metrics.find(
       (m) => m.name === "throttle_events_total"
     );
-    const throttleCount =
-      throttleMetric && throttleMetric.values.length > 0
-        ? throttleMetric.values[0].value
-        : 0;
+    const throttleCount = throttleMetric?.values?.[0]?.value || 0;
 
     const errorMetric = metrics.find((m) => m.name === "etl_errors_total");
-    const errorCount =
-      errorMetric && errorMetric.values.length > 0
-        ? errorMetric.values[0].value
-        : 0;
+    const errorCount = errorMetric?.values?.[0]?.value || 0;
 
     res.status(200).json({
       record_count: recordCount,

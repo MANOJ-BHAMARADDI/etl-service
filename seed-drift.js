@@ -1,5 +1,10 @@
 import { createWriteStream } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+// FIX: Use fileURLToPath and dirname for ES module compatibility
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const filePath = join(__dirname, "market_data_source.csv");
 
