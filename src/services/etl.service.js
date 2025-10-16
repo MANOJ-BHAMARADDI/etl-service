@@ -40,6 +40,7 @@ const etlLatency = new client.Histogram({
 const throttleEvents = new client.Counter({
   name: "throttle_events_total",
   help: "Total number of throttle events",
+  labelNames: ["source"],
 });
 
 const quotas = {
@@ -58,7 +59,7 @@ async function rateLimiter(source, maxRequestsPerMinute) {
   );
   while (!(await bucket.take())) {
     console.warn(`[RATE LIMIT] ${source} limit reached. Waiting...`);
-    throttleEvents.inc();
+    throttleEvents.inc({ source });
     await delay(1000);
   }
 }

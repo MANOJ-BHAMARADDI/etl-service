@@ -2,20 +2,17 @@ import { createWriteStream } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-// FIX: Use fileURLToPath and dirname for ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
 const filePath = join(__dirname, "market_data_source.csv");
 
 const driftedData = [
-  "ticker,usd_price,tx_volume,time",
-  "BITCOIN,68500.50,500000,2025-10-10T12:00:00Z",
-  "ETHEREUM,3500.75,250000,2025-10-10T12:00:00Z",
+  "ticker,price_in_usd,tx_volume,time_int",
+  `BITCOIN,69500.50,510000,${Math.floor(Date.now() / 1000)}`,
+  `ETHEREUM,3600.75,260000,${Math.floor(Date.now() / 1000)}`,
 ];
 
 const writer = createWriteStream(filePath);
 writer.write(driftedData.join("\n"));
 writer.end();
-
-console.log("Successfully seeded drifted data to market_data_source.csv");
+console.log("Successfully seeded drifted and type-changed data.");
