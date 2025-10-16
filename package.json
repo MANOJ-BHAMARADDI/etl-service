@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon src/app.js",
+    "seed-drift": "node seed-drift.js",
+    "fail-run": "node fail-run.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +21,8 @@
     "express": "^5.1.0",
     "mongoose": "^8.19.1",
     "node-cron": "^4.2.1",
+    "prom-client": "^14.0.1",
+    "string-similarity": "^4.0.4",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

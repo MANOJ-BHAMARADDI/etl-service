@@ -62,7 +62,6 @@ const getData = async (req, res) => {
 const getStats = async (req, res) => {
   try {
     const recordCount = await MarketData.countDocuments();
-
     const lastRun = await EtlRun.findOne().sort({ start_time: -1 });
 
     // Use MongoDB Aggregation Pipeline to calculate average latency efficiently
@@ -81,11 +80,20 @@ const getStats = async (req, res) => {
     const averageLatency =
       avgLatencyResult.length > 0 ? avgLatencyResult[0].avgLatency : 0;
 
+    const metrics = await client.register.getMetricsAsJSON();
+    const throttleCount = metrics.find(
+      (m) => m.name === "throttle_events_total"
+    ).values[0].value;
+    const errorCount = metrics.find((m) => m.name === "etl_errors_total")
+      .values[0].value;
+
     res.status(200).json({
       record_count: recordCount,
       last_run_time: lastRun ? lastRun.start_time : null,
       last_run_status: lastRun ? lastRun.status : "N/A",
       average_etl_latency_ms: averageLatency,
+      throttle_events_total: throttleCount,
+      etl_errors_total: errorCount,
     });
   } catch (error) {
     res
@@ -95,4 +103,3 @@ const getStats = async (req, res) => {
 };
 
 export { getData, getStats };
-
