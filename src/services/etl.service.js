@@ -15,6 +15,11 @@ import client from "prom-client";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const CACHE = {
+  coingecko: null,
+  blockchain: null,
+};
+
 // --- Rate Limiter and Caching ---
 // Prometheus Metrics
 const etlRowsProcessed = new client.Counter({ name: 'etl_rows_processed_total', help: 'Total number of rows processed' });
@@ -83,12 +88,21 @@ const fetchFromCsvSourceB = (offset = 0) => {
   return new Promise((resolve, reject) => {
     const results = [];
     const filePath = join(__dirname, "../../market_data_source.csv");
+    let currentRow = 0;
 
     createReadStream(filePath)
       .pipe(csv())
-      .on("data", (data) => results.push(data))
+      // FIX: Implemented the offset logic to skip already processed rows
+      .on("data", (data) => {
+        if (currentRow >= offset) {
+          results.push(data);
+        }
+        currentRow++;
+      })
       .on("end", () => {
-        console.log("Successfully processed data from CSV.");
+        console.log(
+          `Successfully processed data from CSV, skipping ${offset} rows.`
+        );
         resolve(results);
       })
       .on("error", (error) => {

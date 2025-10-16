@@ -16,12 +16,10 @@ const MarketDataSchema = new Schema(
       type: Number,
     },
     source: {
-      // To track if it came from the API or CSV
       type: String,
       required: true,
-      enum: ["api", "csv"],
+      enum: ["coingecko", "csv", "blockchain"],
     },
-    // The timestamp from the source data
     timestamp: {
       type: Date,
       required: true,
