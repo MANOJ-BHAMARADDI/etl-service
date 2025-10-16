@@ -119,3 +119,13 @@ The system is designed with multiple layers of resilience to handle common failu
 **Rate Limiting:** The ETL service automatically retries API calls with exponential backoff if it detects a rate-limit error (HTTP 429) or a temporary server error (HTTP 5xx). This prevents a temporary external issue from causing a complete pipeline failure.
 
 **Schema Drift:** The pipeline gracefully handles changes in the source CSV file's column names. The transformation logic checks for known variations (e.g., `price_usd` or `usd_price`) and logs a warning without crashing, ensuring the run can complete even with minor schema changes.
+
+## Advanced Proof Checklist
+
+### Rate Limiting and Throttling
+
+To demonstrate rate limiting, you can rapidly trigger the ETL process.
+
+```bash
+# Trigger the ETL process multiple times in a row
+for i in {1..15}; do curl -X POST http://localhost:3000/api/refresh -H "Authorization: Bearer mySuperSecretToken123"; done

@@ -5,44 +5,37 @@ import csv from "csv-parser";
 import MarketData from "../api/models/marketData.model.js";
 import RawMarketData from "../api/models/rawMarketData.model.js";
 import EtlRun from "../api/models/etlRun.model.js";
+import EtlCheckpoint from "../api/models/etlCheckpoint.model.js";
+import SchemaVersion from "../api/models/schemaVersion.model.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import rateController from "./rate.controller.js";
+import client from "prom-client";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // --- Rate Limiter and Caching ---
-const apiRequestTracker = {
-  coingecko: { requests: 0, startTime: Date.now() },
-  blockchain: { requests: 0, startTime: Date.now() },
-};
+// Prometheus Metrics
+const etlRowsProcessed = new client.Counter({ name: 'etl_rows_processed_total', help: 'Total number of rows processed' });
+const etlErrors = new client.Counter({ name: 'etl_errors_total', help: 'Total number of ETL errors', labelNames: ['type'] });
+const etlLatency = new client.Histogram({ name: 'etl_latency_seconds', help: 'ETL run latency in seconds', buckets: [1, 5, 10, 30, 60] });
+const throttleEvents = new client.Counter({ name: 'throttle_events_total', help: 'Total number of throttle events' });
 
-const CACHE = {
-  coingecko: null,
-  blockchain: null,
+const quotas = {
+  coingecko: 10,
+  blockchain: 3,
 };
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function rateLimiter(source, maxRequestsPerMinute) {
-  const now = Date.now();
-  const tracker = apiRequestTracker[source];
-
-  if (now - tracker.startTime > 60000) {
-    tracker.requests = 0;
-    tracker.startTime = now;
+  const bucket = rateController(source, maxRequestsPerMinute, maxRequestsPerMinute, 60000);
+  while (!(await bucket.take())) {
+    console.warn(`[RATE LIMIT] ${source} limit reached. Waiting...`);
+    throttleEvents.inc();
+    await delay(1000);
   }
-
-  if (tracker.requests >= maxRequestsPerMinute) {
-    const waitTime = tracker.startTime + 60000 - now;
-    console.warn(
-      `[RATE LIMIT] ${source} limit reached. Waiting for ${waitTime / 1000}s`
-    );
-    await delay(waitTime);
-    // After waiting, reset the tracker for the new minute
-    apiRequestTracker[source] = { requests: 0, startTime: Date.now() };
-  }
-  tracker.requests++;
 }
 
 /**
@@ -50,7 +43,7 @@ async function rateLimiter(source, maxRequestsPerMinute) {
  * Fetches data from the CoinGecko public API (Source A).
  */
 const fetchFromApiSourceA = async (retries = 3, waitTime = 5000) => {
-  await rateLimiter("coingecko", 10);
+  await rateLimiter("coingecko", quotas.coingecko);
   try {
     const response = await axios.get(
       "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1"
@@ -86,7 +79,7 @@ const fetchFromApiSourceA = async (retries = 3, waitTime = 5000) => {
  * --- EXTRACT ---
  * Fetches data from a local CSV file (Source B).
  */
-const fetchFromCsvSourceB = () => {
+const fetchFromCsvSourceB = (offset = 0) => {
   return new Promise((resolve, reject) => {
     const results = [];
     const filePath = join(__dirname, "../../market_data_source.csv");
@@ -110,7 +103,7 @@ const fetchFromCsvSourceB = () => {
  * Fetches data from the Blockchain.com API (Source C).
  */
 const fetchFromApiSourceC = async (retries = 3, waitTime = 5000) => {
-  await rateLimiter("blockchain", 3);
+  await rateLimiter("blockchain", quotas.blockchain);
   try {
     const response = await axios.get(
       "https://api.blockchain.com/v3/exchange/tickers"
@@ -210,7 +203,7 @@ const transformData = (apiDataA, csvData, apiDataC) => {
  * --- LOAD ---
  * Loads the transformed data into the MongoDB database.
  */
-const loadData = async (data, rawData) => {
+const loadData = async (data, rawData, run_id, source, batch_no, offset) => {
   if ((!data || data.length === 0) && (!rawData || rawData.length === 0)) {
     console.log("No data to load.");
     return { normalized: 0, raw: 0 };
@@ -240,7 +233,13 @@ const loadData = async (data, rawData) => {
     rawRowsProcessed = rawData.length;
     console.log(`Raw data loaded into DB. Rows processed: ${rawRowsProcessed}`);
   }
-
+  await EtlCheckpoint.create({
+    run_id,
+    source,
+    batch_no,
+    offset,
+    status: "completed",
+  });
   return { normalized: rowsProcessed, raw: rawRowsProcessed };
 };
 

@@ -5,6 +5,7 @@ import connectDB from "./config/database.js";
 import etlRoutes from "./api/routes/etl.routes.js";
 import dataRoutes from "./api/routes/data.routes.js";
 import "./jobs/etl.scheduler.js";
+import client from "prom-client";
 
 // Connect to MongoDB
 connectDB();
@@ -28,6 +29,11 @@ app.get("/health", (req, res) => {
     timestamp: Date.now(),
   };
   res.status(200).json(healthcheck);
+});
+
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
 const PORT = process.env.PORT || 3000;
