@@ -14,9 +14,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
       - name: Set up environment file
         run: |
           cp .env.example .env
+          echo "PORT=3000" >> .env
           echo "MONGO_URI=mongodb://root:example@mongo:27017/market_data?authSource=admin" >> .env
           echo "SECRET_REFRESH_TOKEN=test-token" >> .env
 
@@ -26,10 +32,21 @@ jobs:
       - name: Wait for services to be healthy
         run: |
           echo "Waiting for API to be ready..."
-          timeout 20 bash -c 'until curl -s http://localhost:3000/health | grep "OK"; do sleep 1; done'
-          echo "API is up!"
+          for i in {1..30}; do
+            if curl -s http://localhost:3000/health | grep -q "OK"; then
+              echo "API is up!"
+              exit 0
+            fi
+            echo "Attempt $i/30 failed, waiting..."
+            sleep 2
+          done
+          echo "API failed to start"
+          exit 1
+
+      - name: Install dependencies
+        run: npm install
 
       - name: Run smoke tests
-        run: |
-          chmod +x ./smoke-test.sh
-          ./smoke-test.sh
+        run: node smoke-test.js
+        env:
+          SECRET_REFRESH_TOKEN: test-token
