@@ -1,4 +1,4 @@
-```markdown
+````markdown
 # ETL System
 
 A resilient Market Data ETL and API service built with Node.js, Express, and MongoDB, fully containerized with Docker. This project ingests data from a public API and a local CSV file, normalizes it, and serves it via a RESTful API, while handling common system failures gracefully.
@@ -21,6 +21,7 @@ Open your terminal and clone the project:
 git clone https://github.com/MANOJ-BHAMARADDI/etl-service
 cd etl-service
 ```
+````
 
 ### 3. Configure Environment Variables
 
@@ -34,7 +35,7 @@ The application requires a `.env` file for the database connection string and AP
    ```env
    PORT=3000
    MONGO_URI=mongodb://root:example@mongo:27017/market_data?authSource=admin
-   SECRET_REFRESH_TOKEN=mySuperSecretToken123
+   SECRET_REFRESH_TOKEN=<your_secret_token>
    ```
 
 ### 4. Build and Start the Services
@@ -54,7 +55,7 @@ The database starts empty. To populate it with data, trigger the ETL process by 
 ```bash
 curl -X POST http://localhost:3000/api/refresh \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer mySuperSecretToken123"
+  -H "Authorization: Bearer <your_secret_token>"
 ```
 
 **Note**: Replace `mySuperSecretToken123` with the actual token you set in your `.env` file.
@@ -90,6 +91,7 @@ Fetches market data with support for filtering, sorting, and pagination.
 **Request**: `GET /api/data`
 
 **Query Parameters**:
+
 - `symbol` (string): Filter by a specific stock/crypto symbol (e.g., `?symbol=BTC`).
 - `sortBy` (string): Sort the results (e.g., `?sortBy=price_usd:desc`).
 - `page` (number): The page number for pagination (e.g., `?page=2`).
@@ -123,6 +125,7 @@ The service exposes Prometheus-compatible metrics for real-time monitoring.
 **Request**: `GET /metrics`
 
 **Example Output**:
+
 ```
 # HELP etl_rows_processed_total Total number of rows processed
 # TYPE etl_rows_processed_total counter
@@ -148,6 +151,7 @@ Each ETL process is tracked with a unique `run_id`. You can fetch detailed metad
 **Request**: `GET /api/runs/:id`
 
 **Example JSON Output for a Successful Run**:
+
 ```json
 {
   "run_id": "run_a4f1e9b2-7b1e-4b7e-8f5c-9c7f3e6a0d2a",
@@ -196,17 +200,20 @@ Each ETL process is tracked with a unique `run_id`. You can fetch detailed metad
 The ETL process is idempotent. Running it multiple times will not create duplicate records, which is critical for data integrity after a failure.
 
 1. **Before First Run** (Database is empty):
+
    ```bash
    docker-compose exec mongo mongosh --eval "db.getSiblingDB('market_data').marketdata.countDocuments()"
    # Expected Output: 0
    ```
 
 2. **Trigger the First ETL Run**:
+
    ```bash
    make refresh
    ```
 
 3. **After First Run** (Records are inserted):
+
    ```bash
    docker-compose exec mongo mongosh --eval "db.getSiblingDB('market_data').marketdata.countDocuments()"
    # Expected Output: 12
@@ -226,16 +233,19 @@ The ETL process is idempotent. Running it multiple times will not create duplica
 Prove that the system can recover and continue after a crash without creating duplicate data.
 
 1. **Trigger an ETL run**:
+
    ```bash
    curl -X POST -H "Authorization: Bearer mySuperSecretToken123" http://localhost:3000/api/refresh
    ```
 
 2. **Simulate a crash**: Immediately run the helper script to kill the API container.
+
    ```bash
    node fail-run.js
    ```
 
 3. **Restart and resume**: Restart the containers and trigger the ETL again.
+
    ```bash
    docker-compose up -d
    curl -X POST -H "Authorization: Bearer mySuperSecretToken123" http://localhost:3000/api/refresh
@@ -248,11 +258,13 @@ Prove that the system can recover and continue after a crash without creating du
 Prove the system can automatically adapt to changes in source schema.
 
 1. **Seed Drift**: Run the script to create a CSV with modified headers.
+
    ```bash
    node seed-drift.js
    ```
 
 2. **Trigger Run**: Start a new ETL process.
+
    ```bash
    curl -X POST -H "Authorization: Bearer mySuperSecretToken123" http://localhost:3000/api/refresh
    ```
@@ -282,6 +294,8 @@ To demonstrate rate limiting, you can rapidly trigger the ETL process:
 # Trigger the ETL process multiple times in a row
 for i in {1..15}; do curl -X POST http://localhost:3000/api/refresh -H "Authorization: Bearer mySuperSecretToken123"; done
 ```
+
 ```
 
 This README.md consolidates the provided content, ensuring all sections are preserved, organized, and formatted consistently in Markdown. It includes all instructions, examples, and details about the ETL system's setup, usage, architecture, failure recovery, and testing procedures. The structure is clear, with appropriate headings, code blocks, and notes to guide users effectively.
+```
