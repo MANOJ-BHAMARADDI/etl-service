@@ -27,7 +27,8 @@ jobs:
           echo "SECRET_REFRESH_TOKEN=test-token" >> .env
 
       - name: Build and start services
-        run: docker compose up -d --build   # <- notice the space instead of dash
+        run: docker compose up -d --build
+
 
       - name: Wait for services to be healthy
         run: |
