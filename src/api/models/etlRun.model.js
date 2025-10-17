@@ -16,17 +16,26 @@ const EtlRunSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ["started", "completed", "failed"],
+    enum: ["started", "completed", "failed", "completed_with_warnings"],
     default: "started",
   },
-  rows_processed: {
-    type: Number,
-    default: 0,
+  stats: {
+    extracted: { type: Number, default: 0 },
+    loaded: { type: Number, default: 0 },
+    duplicates: { type: Number, default: 0 },
+    quarantined: { type: Number, default: 0 },
+    errors: { type: Number, default: 0 },
+    throttle_events: { type: Number, default: 0 },
+  },
+  resume_from: {
+    batch_no: Number,
+    offset: Number,
   },
   errors: [
     {
       message: String,
       details: Schema.Types.Mixed,
+      timestamp: { type: Date, default: Date.now },
     },
   ],
 });

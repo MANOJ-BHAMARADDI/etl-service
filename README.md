@@ -163,40 +163,51 @@ etl_latency_seconds_sum 8.3
 etl_latency_seconds_count 1
 ```
 
-### ETL Run Traceability (/api/runs/:id)
+### ETL Run Traceability (`/api/runs/:id`)
 
-Each ETL process is tracked with a unique run_id. You can fetch detailed metadata, including batch status and applied schema mappings.
+Each ETL process is tracked with a unique `run_id`. You can fetch detailed metadata for any run, including its status, batch processing details, performance stats, and any schema mappings that were applied.
 
-Example JSON Output for a Successful Run:
+**Example JSON Output for a Successful Run:**
 
 ```json
 {
-  "run": {
-    "run_id": "run_a4f1e9b2-7b1e-4b7e-8f5c-9c7f3e6a0d2a",
-    "start_time": "2025-10-16T15:00:00.123Z",
-    "end_time": "2025-10-16T15:00:15.456Z",
-    "status": "completed",
-    "rows_processed": 12,
-    "errors": []
+  "run_id": "run_a4f1e9b2-7b1e-4b7e-8f5c-9c7f3e6a0d2a",
+  "start_time": "2025-10-17T04:30:00.123Z",
+  "end_time": "2025-10-17T04:30:15.456Z",
+  "status": "completed_with_warnings",
+  "stats": {
+    "extracted": 15,
+    "loaded": 12,
+    "duplicates": 0,
+    "quarantined": 3,
+    "errors": 1,
+    "throttle_events": 2
   },
-  "checkpoints": [
+  "resume_from": null,
+  "errors": [
     {
-      "run_id": "run_a4f1e9b2-7b1e-4b7e-8f5c-9c7f3e6a0d2a",
-      "source": "all_sources",
-      "batch_no": 1,
+      "message": "Low schema confidence for CSV: 0.75",
+      "timestamp": "2025-10-17T04:30:05.123Z"
+    }
+  ],
+  "batches": [
+    {
+      "no": 1,
       "offset": 12,
       "status": "completed"
     }
   ],
+  "failed_batches": [],
   "schema_version": {
-    "source": "csv",
-    "version": 1665903615000,
-    "schema": ["ticker", "price_in_usd", "tx_volume", "time_int"],
-    "mappings": {
-      "price_in_usd": "price_usd",
-      "time_int": "time"
-    },
-    "confidence": 0.85
+    "version": 1729158005000,
+    "confidence": 0.95,
+    "applied_mappings": [
+      {
+        "from": "price_in_usd",
+        "to": "price_usd",
+        "confidence": 0.92
+      }
+    ]
   }
 }
 ```

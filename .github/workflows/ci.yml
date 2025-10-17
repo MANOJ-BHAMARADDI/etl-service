@@ -1,0 +1,35 @@
+name: CI Smoke Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up environment file
+        run: |
+          cp .env.example .env
+          echo "MONGO_URI=mongodb://root:example@mongo:27017/market_data?authSource=admin" >> .env
+          echo "SECRET_REFRESH_TOKEN=test-token" >> .env
+
+      - name: Build and start services
+        run: docker-compose up -d --build
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for API to be ready..."
+          timeout 20 bash -c 'until curl -s http://localhost:3000/health | grep "OK"; do sleep 1; done'
+          echo "API is up!"
+
+      - name: Run smoke tests
+        run: |
+          chmod +x ./smoke-test.sh
+          ./smoke-test.sh
