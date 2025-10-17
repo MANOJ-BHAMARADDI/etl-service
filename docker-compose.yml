@@ -1,31 +1,38 @@
-# version: '3.8'
+version: '3.9'
 
 services:
-  # Our Node.js API Service
+  # Node.js API Service
   api:
     build: .
+    container_name: kasparro_api
     ports:
       - "3000:3000"
     volumes:
       - .:/usr/src/app
-      - /usr/src/app/node_modules # Exclude node_modules from being overwritten
+      - /usr/src/app/node_modules
     env_file:
       - ./.env
     depends_on:
-      - mongo
-    container_name: kasparro_api
+      mongo:
+        condition: service_healthy
+    command: npm run dev # hot reload with nodemon
 
-  # MongoDB Database Service
+  # MongoDB Service
   mongo:
     image: mongo:latest
+    container_name: kasparro_db
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=example
-    container_name: kasparro_db
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mongo-data:

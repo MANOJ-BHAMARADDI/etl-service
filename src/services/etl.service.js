@@ -338,7 +338,12 @@ const transformData = async (apiDataA, csvData, apiDataC) => {
   ];
   // --- VALIDATION AND TYPE RECONCILIATION ---
   const validatedData = allData.filter((item) => {
-    // ... (logic is the same)
+    return (
+      item.symbol &&
+      item.price_usd != null &&
+      item.timestamp instanceof Date &&
+      !isNaN(item.timestamp)
+    );
   });
 
   console.log("Data transformed successfully.");
@@ -401,10 +406,9 @@ const runEtlProcess = async () => {
   const endTimer = etlLatency.startTimer();
 
   try {
-    // FIX: Look for any run that is not 'completed' to handle crashes
     const lastUnfinishedRun = await EtlRun.findOne({
       status: { $ne: "completed" },
-      run_id: { $ne: etlRun.run_id }, // Ensure we don't resume the current run
+      run_id: { $ne: etlRun.run_id },
     }).sort({
       start_time: -1,
     });
@@ -431,24 +435,44 @@ const runEtlProcess = async () => {
 
     const rawData = [...apiDataA, ...csvData, ...apiDataC];
     const transformedData = await transformData(apiDataA, csvData, apiDataC);
-    const { normalized, raw } = await loadData(
-      transformedData,
-      rawData,
-      etlRun.run_id,
-      "all_sources",
-      1,
-      transformedData.length
-    );
 
-    etlRun.status = "completed";
-    etlRun.end_time = new Date();
-    etlRun.rows_processed = normalized;
+    // **CRITICAL FIX**: Wrap the loadData call in its own try/catch
+    // to prevent crashes on database errors.
+    try {
+      const { normalized, raw } = await loadData(
+        transformedData,
+        rawData,
+        etlRun.run_id,
+        "all_sources",
+        1,
+        transformedData.length
+      );
+      etlRun.status = "completed";
+      etlRun.end_time = new Date();
+      etlRun.stats.loaded = normalized; // Use stats.loaded
+      etlRowsProcessed.inc(normalized);
+    } catch (dbError) {
+      console.error(
+        `Database operation failed for run ${etlRun.run_id}.`,
+        dbError
+      );
+      etlRun.status = "failed";
+      etlRun.errors.push({
+        message: "Database load error: " + dbError.message,
+        details: dbError.stack,
+      });
+      etlErrors.inc({ type: "database_failure" });
+    }
+
     await etlRun.save();
-    etlRowsProcessed.inc(normalized);
-
-    console.log(`ETL run ${etlRun.run_id} completed successfully.`);
+    console.log(
+      `ETL run ${etlRun.run_id} finished with status: ${etlRun.status}.`
+    );
   } catch (error) {
-    console.error(`ETL run ${etlRun.run_id} failed.`, error);
+    console.error(
+      `A critical error occurred during ETL run ${etlRun.run_id}.`,
+      error
+    );
     etlRun.status = "failed";
     etlRun.end_time = new Date();
     etlRun.errors.push({ message: error.message, details: error.stack });
