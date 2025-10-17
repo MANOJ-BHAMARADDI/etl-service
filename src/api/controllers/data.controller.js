@@ -3,7 +3,7 @@ import EtlRun from "../models/etlRun.model.js";
 import client from "prom-client";
 
 /**
- * Controller to fetch market data with filtering, sorting, and pagination.
+ * Controller to fetch market data with cursor-based pagination, filtering, and sorting.
  */
 const getData = async (req, res) => {
   try {
@@ -31,23 +31,21 @@ const getData = async (req, res) => {
       sort.timestamp = -1; // Default sort by most recent
     }
 
-    // --- Pagination ---
-    const page = parseInt(req.query.page, 10) || 1;
+    // --- Cursor-based Pagination ---
     const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    if (req.query.cursor) {
+      filter._id = { $lt: req.query.cursor }; // fetch records older than the cursor
+    }
 
     const data = await MarketData.find(filter)
-      .sort(sort)
-      .skip(skip)
+      .sort({ _id: -1 }) // always sort by _id for consistent pagination
       .limit(limit);
 
-    const totalRecords = await MarketData.countDocuments(filter);
+    const nextCursor = data.length === limit ? data[data.length - 1]._id : null;
 
     res.status(200).json({
-      totalRecords,
-      currentPage: page,
-      totalPages: Math.ceil(totalRecords / limit),
       data,
+      nextCursor,
     });
   } catch (error) {
     res

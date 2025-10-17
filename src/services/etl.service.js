@@ -42,6 +42,11 @@ const throttleEvents = new client.Counter({
   help: "Total number of throttle events",
   labelNames: ["source"],
 });
+const outliersDetected = new client.Counter({
+  name: "etl_outliers_detected_total",
+  help: "Total number of outliers detected",
+  labelNames: ["field", "symbol"],
+});
 
 const quotas = {
   coingecko: 10,
@@ -171,6 +176,58 @@ const fetchFromApiSourceC = async (retries = 3, waitTime = 5000) => {
       "Blockchain.com API fetch failed after multiple retries and no cache available."
     );
   }
+};
+
+// --- OUTLIER DETECTION ---
+const detectOutliers = (data) => {
+  const outliers = [];
+  const threshold = 3; // Z-score threshold
+
+  // Calculate mean and standard deviation for price and volume
+  const prices = data.map((d) => d.price_usd).filter((p) => p !== null);
+  const volumes = data.map((d) => d.volume).filter((v) => v !== null);
+
+  const meanPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const stdDevPrice = Math.sqrt(
+    prices.map((x) => Math.pow(x - meanPrice, 2)).reduce((a, b) => a + b, 0) /
+      prices.length
+  );
+
+  const meanVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  const stdDevVolume = Math.sqrt(
+    volumes.map((x) => Math.pow(x - meanVolume, 2)).reduce((a, b) => a + b, 0) /
+      volumes.length
+  );
+
+  for (const item of data) {
+    if (item.price_usd !== null) {
+      const zScorePrice = (item.price_usd - meanPrice) / stdDevPrice;
+      if (Math.abs(zScorePrice) > threshold) {
+        outliers.push({ ...item, field: "price_usd", zScore: zScorePrice });
+        outliersDetected.inc({ field: "price_usd", symbol: item.symbol });
+      }
+    }
+    if (item.volume !== null) {
+      const zScoreVolume = (item.volume - meanVolume) / stdDevVolume;
+      if (Math.abs(zScoreVolume) > threshold) {
+        outliers.push({ ...item, field: "volume", zScore: zScoreVolume });
+        outliersDetected.inc({ field: "volume", symbol: item.symbol });
+      }
+    }
+  }
+
+  if (outliers.length > 0) {
+    console.warn(
+      `[OUTLIER DETECTED] Found ${outliers.length} potential outliers.`
+    );
+  }
+
+  return data.filter(
+    (d) =>
+      !outliers.find(
+        (o) => o.symbol === d.symbol && o.timestamp === d.timestamp
+      )
+  );
 };
 
 /**
@@ -347,7 +404,7 @@ const transformData = async (apiDataA, csvData, apiDataC) => {
   });
 
   console.log("Data transformed successfully.");
-  return validatedData;
+  return detectOutliers(validatedData);
 };
 
 /**
