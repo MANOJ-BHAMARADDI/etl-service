@@ -28,6 +28,10 @@ jobs:
 
       - name: Build and start services
         run: docker compose up -d --build
+<<<<<<< HEAD
+=======
+
+>>>>>>> 95d9ef238c355fe463c8ade523661771470baa78
 
       - name: Wait for MongoDB to be ready
         run: |
