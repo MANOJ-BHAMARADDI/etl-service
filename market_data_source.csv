@@ -1,3 +1,2 @@
-ticker,price_in_usd,tx_volume,time_int
-BITCOIN,69500.50,510000,1760689468
-ETHEREUM,3600.75,260000,1760689468
+column_a,column_b,column_c,column_d
+data1,100,2000,1760698232

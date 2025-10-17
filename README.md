@@ -55,7 +55,7 @@ The database starts empty. To populate it with data, trigger the ETL process by 
 ```bash
 curl -X POST http://localhost:3000/api/refresh \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your_secret_token>"
+  -H "Authorization: Bearer TOKEN"
 ```
 
 **Note**: Replace `mySuperSecretToken123` with the actual token you set in your `.env` file.
